@@ -39,4 +39,3 @@ Use `"assault"` or `"parley"` for other paths.
 ## UI
 
 http://localhost:8080
-
