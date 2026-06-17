@@ -1,0 +1,245 @@
+{
+  "name": "job_application_pipeline",
+  "description": "Demo hiring pipeline: validate → auto-screen → parallel assessments → manager review → offer or rejection",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 604800,
+  "restartable": true,
+  "inputParameters": [
+    "candidateName",
+    "email",
+    "jobTitle",
+    "requiredSkills",
+    "resumeText"
+  ],
+  "inputTemplate": {
+    "candidateName": "Jane Doe",
+    "email": "jane.doe@example.com",
+    "jobTitle": "Senior Backend Engineer",
+    "requiredSkills": ["python", "api", "postgresql", "workflow"],
+    "resumeText": "10 years building Python APIs with FastAPI and PostgreSQL. Experience with workflow orchestration and distributed systems."
+  },
+  "tasks": [
+    {
+      "name": "validate_application",
+      "taskReferenceName": "validate_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "candidateName": "${workflow.input.candidateName}",
+        "email": "${workflow.input.email}",
+        "jobTitle": "${workflow.input.jobTitle}",
+        "requiredSkills": "${workflow.input.requiredSkills}",
+        "resumeText": "${workflow.input.resumeText}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var missing = []; if (!$.candidateName) missing.push('candidateName'); if (!$.email) missing.push('email'); if (!$.jobTitle) missing.push('jobTitle'); if (!$.resumeText) missing.push('resumeText'); if (!$.requiredSkills || $.requiredSkills.length === 0) missing.push('requiredSkills'); if (missing.length > 0) { return { valid: false, missingFields: missing }; } return { valid: true, candidateName: $.candidateName, email: $.email, jobTitle: $.jobTitle, skillCount: $.requiredSkills.length }; })()"
+      }
+    },
+    {
+      "name": "screen_resume",
+      "taskReferenceName": "screen_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "resumeText": "${workflow.input.resumeText}",
+        "requiredSkills": "${workflow.input.requiredSkills}",
+        "jobTitle": "${workflow.input.jobTitle}",
+        "candidateName": "${workflow.input.candidateName}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var resume = ($.resumeText || '').toLowerCase(); var skills = $.requiredSkills || []; var matched = []; var missed = []; for (var i = 0; i < skills.length; i++) { var skill = String(skills[i]).toLowerCase(); if (resume.indexOf(skill) >= 0) { matched.push(skills[i]); } else { missed.push(skills[i]); } } var score = skills.length === 0 ? 0 : Math.round((matched.length / skills.length) * 100); var passThreshold = 60; var decision = score >= passThreshold ? 'pass' : 'reject'; return { candidateName: $.candidateName, jobTitle: $.jobTitle, score: score, passThreshold: passThreshold, matchedSkills: matched, missingSkills: missed, decision: decision, summary: $.candidateName + ' scored ' + score + '/100 for ' + $.jobTitle + ' (' + matched.length + '/' + skills.length + ' skills matched)' }; })()"
+      }
+    },
+    {
+      "name": "screening_gate",
+      "taskReferenceName": "screening_gate_ref",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "screeningDecision",
+      "inputParameters": {
+        "screeningDecision": "${screen_ref.output.result.decision}"
+      },
+      "decisionCases": {
+        "reject": [
+          {
+            "name": "prepare_screening_rejection",
+            "taskReferenceName": "screening_rejection_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "screening": "${screen_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var s = $.screening; return { status: 'rejected', stage: 'auto_screening', candidateName: s.candidateName, jobTitle: s.jobTitle, score: s.score, reason: 'Below screening threshold of ' + s.passThreshold, missingSkills: s.missingSkills, message: 'Thank you for applying. We are moving forward with other candidates at this time.' }; })()"
+            }
+          },
+          {
+            "name": "end_screening_rejection",
+            "taskReferenceName": "end_screening_rejection_ref",
+            "type": "TERMINATE",
+            "inputParameters": {
+              "terminationStatus": "COMPLETED",
+              "terminationReason": "Candidate did not pass automated resume screening",
+              "workflowOutput": {
+                "outcome": "rejected",
+                "stage": "auto_screening",
+                "candidateName": "${workflow.input.candidateName}",
+                "jobTitle": "${workflow.input.jobTitle}",
+                "screeningScore": "${screen_ref.output.result.score}",
+                "details": "${screening_rejection_ref.output.result}"
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": []
+    },
+    {
+      "name": "parallel_assessments",
+      "taskReferenceName": "parallel_assessments_ref",
+      "type": "FORK_JOIN",
+      "forkTasks": [
+        [
+          {
+            "name": "technical_assessment",
+            "taskReferenceName": "technical_assessment_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "screeningScore": "${screen_ref.output.result.score}",
+              "jobTitle": "${workflow.input.jobTitle}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var base = $.screeningScore || 0; var variance = Math.floor(Math.random() * 21) - 10; var score = Math.max(0, Math.min(100, base + variance)); return { type: 'technical_quiz', score: score, passed: score >= 70, completedAt: new Date().toISOString(), note: 'Simulated coding assessment for ' + $.jobTitle }; })()"
+            }
+          }
+        ],
+        [
+          {
+            "name": "reference_check",
+            "taskReferenceName": "reference_check_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "candidateName": "${workflow.input.candidateName}",
+              "email": "${workflow.input.email}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { return { type: 'reference_check', status: 'completed', referencesContacted: 2, positiveReferences: 2, flags: [], summary: 'References for ' + $.candidateName + ' (' + $.email + ') responded positively', completedAt: new Date().toISOString() }; })()"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "assessments_join",
+      "taskReferenceName": "assessments_join_ref",
+      "type": "JOIN",
+      "joinOn": [
+        "technical_assessment_ref",
+        "reference_check_ref"
+      ]
+    },
+    {
+      "name": "aggregate_review_packet",
+      "taskReferenceName": "aggregate_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "screening": "${screen_ref.output.result}",
+        "technical": "${technical_assessment_ref.output.result}",
+        "references": "${reference_check_ref.output.result}",
+        "candidateName": "${workflow.input.candidateName}",
+        "jobTitle": "${workflow.input.jobTitle}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var screeningScore = $.screening.score; var technicalScore = $.technical.score; var referenceBoost = $.references.positiveReferences >= 2 ? 5 : 0; var compositeScore = Math.round((screeningScore * 0.4) + (technicalScore * 0.5) + referenceBoost); var recommendInterview = compositeScore >= 75 && $.technical.passed; return { candidateName: $.candidateName, jobTitle: $.jobTitle, screeningScore: screeningScore, technicalScore: technicalScore, referenceSummary: $.references.summary, compositeScore: compositeScore, recommendInterview: recommendInterview, reviewerBrief: $.candidateName + ' — composite ' + compositeScore + '/100 (screening ' + screeningScore + ', technical ' + technicalScore + '). References: ' + $.references.positiveReferences + '/2 positive.' }; })()"
+      }
+    },
+    {
+      "name": "hiring_manager_review",
+      "taskReferenceName": "manager_review_ref",
+      "type": "HUMAN",
+      "inputParameters": {
+        "reviewPacket": "${aggregate_ref.output.result}",
+        "instructions": "Review the candidate packet and complete this task with decision: approved or rejected"
+      }
+    },
+    {
+      "name": "final_decision_gate",
+      "taskReferenceName": "final_decision_gate_ref",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "managerDecision",
+      "inputParameters": {
+        "managerDecision": "${manager_review_ref.output.decision}"
+      },
+      "decisionCases": {
+        "approved": [
+          {
+            "name": "prepare_offer",
+            "taskReferenceName": "prepare_offer_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "candidateName": "${workflow.input.candidateName}",
+              "email": "${workflow.input.email}",
+              "jobTitle": "${workflow.input.jobTitle}",
+              "reviewPacket": "${aggregate_ref.output.result}",
+              "managerReview": "${manager_review_ref.output}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { return { status: 'offer_extended', candidateName: $.candidateName, email: $.email, jobTitle: $.jobTitle, approvedBy: $.managerReview.approvedBy || 'hiring-manager', comments: $.managerReview.comments || '', compositeScore: $.reviewPacket.compositeScore, offerDetails: { startDate: 'TBD', compensationBand: 'L5 Backend', nextStep: 'Recruiter will send formal offer letter within 2 business days' } }; })()"
+            }
+          },
+          {
+            "name": "end_offer_extended",
+            "taskReferenceName": "end_offer_ref",
+            "type": "TERMINATE",
+            "inputParameters": {
+              "terminationStatus": "COMPLETED",
+              "terminationReason": "Hiring manager approved candidate; offer prepared",
+              "workflowOutput": {
+                "outcome": "offer_extended",
+                "stage": "hiring_manager_review",
+                "candidateName": "${workflow.input.candidateName}",
+                "jobTitle": "${workflow.input.jobTitle}",
+                "compositeScore": "${aggregate_ref.output.result.compositeScore}",
+                "approvedBy": "${manager_review_ref.output.approvedBy}",
+                "offer": "${prepare_offer_ref.output.result}"
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "prepare_final_rejection",
+          "taskReferenceName": "final_rejection_ref",
+          "type": "INLINE",
+          "inputParameters": {
+            "candidateName": "${workflow.input.candidateName}",
+            "jobTitle": "${workflow.input.jobTitle}",
+            "reviewPacket": "${aggregate_ref.output.result}",
+            "managerReview": "${manager_review_ref.output}",
+            "evaluatorType": "graaljs",
+            "expression": "(function () { return { status: 'rejected', stage: 'hiring_manager_review', candidateName: $.candidateName, jobTitle: $.jobTitle, compositeScore: $.reviewPacket.compositeScore, reviewedBy: $.managerReview.approvedBy || $.managerReview.reviewedBy || 'hiring-manager', comments: $.managerReview.comments || 'Not selected after manager review', message: 'Thank you for your time during our interview process.' }; })()"
+          }
+        },
+        {
+          "name": "end_final_rejection",
+          "taskReferenceName": "end_final_rejection_ref",
+          "type": "TERMINATE",
+          "inputParameters": {
+            "terminationStatus": "COMPLETED",
+            "terminationReason": "Hiring manager declined candidate",
+            "workflowOutput": {
+              "outcome": "rejected",
+              "stage": "hiring_manager_review",
+              "candidateName": "${workflow.input.candidateName}",
+              "jobTitle": "${workflow.input.jobTitle}",
+              "compositeScore": "${aggregate_ref.output.result.compositeScore}",
+              "details": "${final_rejection_ref.output.result}"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "outputParameters": {
+    "candidateName": "${workflow.input.candidateName}",
+    "jobTitle": "${workflow.input.jobTitle}",
+    "screeningScore": "${screen_ref.output.result.score}",
+    "compositeScore": "${aggregate_ref.output.result.compositeScore}",
+    "reviewPacket": "${aggregate_ref.output.result}"
+  }
+}

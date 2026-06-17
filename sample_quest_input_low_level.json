@@ -1,0 +1,11 @@
+{
+  "partyName": "The Rusty Initiative",
+  "questGiver": "Innkeeper Bram",
+  "dungeonName": "Goblin Warren of Route 9",
+  "questObjective": "Clear the warren so trade caravans can pass",
+  "difficulty": "easy",
+  "party": [
+    { "name": "Pip", "class": "rogue", "level": 2 },
+    { "name": "Grok", "class": "fighter", "level": 2 }
+  ]
+}

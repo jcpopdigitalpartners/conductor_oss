@@ -1,0 +1,7 @@
+# Local Conductor SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Scratch / temp
+scratch.*

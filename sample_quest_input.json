@@ -1,0 +1,13 @@
+{
+  "partyName": "The Conductor's Company",
+  "questGiver": "Magistrate Elara Voss",
+  "dungeonName": "Vault of Shattered Sigils",
+  "questObjective": "Recover the Codex of Forked Paths before the cult completes the ritual",
+  "difficulty": "hard",
+  "party": [
+    { "name": "Kaelen", "class": "fighter", "level": 6 },
+    { "name": "Sera", "class": "rogue", "level": 6 },
+    { "name": "Theron", "class": "wizard", "level": 5 },
+    { "name": "Mira", "class": "cleric", "level": 6 }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "candidateName": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "jobTitle": "Senior Backend Engineer",
+  "requiredSkills": ["python", "api", "postgresql", "workflow"],
+  "resumeText": "10 years building Python APIs with FastAPI and PostgreSQL. Experience with workflow orchestration and distributed systems."
+}

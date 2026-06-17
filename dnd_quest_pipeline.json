@@ -1,0 +1,427 @@
+{
+  "name": "dnd_quest_pipeline",
+  "description": "Orchestrate a D&D quest: assemble the party, survive the road, explore in parallel, DM crossroads, boss fight, and loot",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "timeoutPolicy": "ALERT_ONLY",
+  "timeoutSeconds": 604800,
+  "restartable": true,
+  "inputParameters": [
+    "partyName",
+    "questGiver",
+    "dungeonName",
+    "questObjective",
+    "difficulty",
+    "party"
+  ],
+  "inputTemplate": {
+    "partyName": "The Conductor's Company",
+    "questGiver": "Magistrate Elara Voss",
+    "dungeonName": "Vault of Shattered Sigils",
+    "questObjective": "Recover the Codex of Forked Paths before the cult completes the ritual",
+    "difficulty": "hard",
+    "party": [
+      { "name": "Kaelen", "class": "fighter", "level": 6 },
+      { "name": "Sera", "class": "rogue", "level": 6 },
+      { "name": "Theron", "class": "wizard", "level": 5 },
+      { "name": "Mira", "class": "cleric", "level": 6 }
+    ]
+  },
+  "tasks": [
+    {
+      "name": "validate_party",
+      "taskReferenceName": "validate_party_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "partyName": "${workflow.input.partyName}",
+        "dungeonName": "${workflow.input.dungeonName}",
+        "questObjective": "${workflow.input.questObjective}",
+        "difficulty": "${workflow.input.difficulty}",
+        "party": "${workflow.input.party}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var missing = []; if (!$.partyName) missing.push('partyName'); if (!$.dungeonName) missing.push('dungeonName'); if (!$.questObjective) missing.push('questObjective'); if (!$.party || $.party.length === 0) missing.push('party'); var validDiff = ['easy', 'medium', 'hard', 'deadly']; if (!validDiff.includes(($.difficulty || '').toLowerCase())) missing.push('difficulty'); if (missing.length) return { valid: false, missingFields: missing }; return { valid: true, partyName: $.partyName, memberCount: $.party.length, difficulty: $.difficulty.toLowerCase() }; })()"
+      }
+    },
+    {
+      "name": "assemble_party_sheet",
+      "taskReferenceName": "party_sheet_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "partyName": "${workflow.input.partyName}",
+        "party": "${workflow.input.party}",
+        "difficulty": "${workflow.input.difficulty}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var mods = { fighter: { combat: 3, stealth: 0, arcana: 0, religion: 1 }, rogue: { combat: 1, stealth: 4, arcana: 0, religion: 0 }, wizard: { combat: 0, stealth: 1, arcana: 4, religion: 0 }, cleric: { combat: 1, stealth: 0, arcana: 1, religion: 4 }, bard: { combat: 1, stealth: 2, arcana: 2, religion: 2 }, ranger: { combat: 2, stealth: 3, arcana: 0, religion: 1 }, paladin: { combat: 3, stealth: 0, arcana: 0, religion: 3 } }; var dcMap = { easy: 10, medium: 14, hard: 18, deadly: 22 }; var totalLevel = 0; var roster = []; for (var i = 0; i < $.party.length; i++) { var m = $.party[i]; var cls = (m.class || 'fighter').toLowerCase(); var mod = mods[cls] || mods.fighter; var level = m.level || 1; totalLevel += level; roster.push({ name: m.name, class: cls, level: level, modifiers: mod, maxHp: 8 + (level * 6) }); } var avgLevel = Math.round(totalLevel / $.party.length); return { partyName: $.partyName, roster: roster, totalLevel: totalLevel, averageLevel: avgLevel, partyPower: totalLevel + avgLevel, difficulty: $.difficulty.toLowerCase(), questDc: dcMap[$.difficulty.toLowerCase()] || 14, partyHp: roster.reduce(function (s, r) { return s + r.maxHp; }, 0) }; })()"
+      }
+    },
+    {
+      "name": "tavern_briefing",
+      "taskReferenceName": "briefing_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "questGiver": "${workflow.input.questGiver}",
+        "dungeonName": "${workflow.input.dungeonName}",
+        "questObjective": "${workflow.input.questObjective}",
+        "partyName": "${workflow.input.partyName}",
+        "partySheet": "${party_sheet_ref.output.result}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var p = $.partySheet; return { scene: 'tavern', narration: $.questGiver + ' slides a wax-sealed map across the table. \"' + $.partyName + ', the ' + $.dungeonName + ' stirs again. ' + $.questObjective + '.\" Candlelight catches nervous eyes. The party of ' + p.memberCount + ' (avg level ' + p.averageLevel + ') accepts the contract.', questGiver: $.questGiver, rewardGold: p.totalLevel * 25, dangerRating: $.partySheet.difficulty }; })()"
+      }
+    },
+    {
+      "name": "roll_travel_encounter",
+      "taskReferenceName": "travel_roll_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "partyName": "${workflow.input.partyName}",
+        "dungeonName": "${workflow.input.dungeonName}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var roll = Math.floor(Math.random() * 20) + 1; var outcome = roll <= 5 ? 'ambush' : roll <= 12 ? 'merchant' : 'uneventful'; var flavor = { ambush: 'Goblins burst from the treeline!', merchant: 'A traveling tinker offers dubious potions.', uneventful: 'The road is quiet; only crows keep watch.' }; return { roll: roll, outcome: outcome, narration: flavor[outcome] }; })()"
+      }
+    },
+    {
+      "name": "travel_encounter_gate",
+      "taskReferenceName": "travel_gate_ref",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "travelOutcome",
+      "inputParameters": {
+        "travelOutcome": "${travel_roll_ref.output.result.outcome}"
+      },
+      "decisionCases": {
+        "ambush": [
+          {
+            "name": "resolve_road_ambush",
+            "taskReferenceName": "ambush_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var p = $.partySheet; var attackRoll = Math.floor(Math.random() * 20) + 1 + Math.floor(p.partyPower / 4); var dc = p.questDc - 2; var success = attackRoll >= dc; var damage = success ? Math.floor(Math.random() * 8) + 2 : Math.floor(Math.random() * 16) + 8; var hpRemaining = Math.max(0, p.partyHp - damage); var crit = attackRoll >= 20; return { encounter: 'road_ambush', attackRoll: attackRoll, dc: dc, victory: success, critical: crit, damageTaken: damage, partyHpRemaining: hpRemaining, narration: success ? 'Steel flashes; the ambush breaks before it begins.' : 'The party takes a bruising fight on the road.', wiped: hpRemaining <= 0 }; })()"
+            }
+          },
+          {
+            "name": "determine_ambush_status",
+            "taskReferenceName": "ambush_status_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "wiped": "${ambush_ref.output.result.wiped}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { return { partyStatus: $.wiped ? 'wiped' : 'standing' }; })()"
+            }
+          },
+          {
+            "name": "ambush_survival_gate",
+            "taskReferenceName": "ambush_survival_ref",
+            "type": "SWITCH",
+            "evaluatorType": "value-param",
+            "expression": "partyStatus",
+            "inputParameters": {
+              "partyStatus": "${ambush_status_ref.output.result.partyStatus}"
+            },
+            "decisionCases": {
+              "wiped": [
+                {
+                  "name": "end_total_party_kill",
+                  "taskReferenceName": "tpk_ref",
+                  "type": "TERMINATE",
+                  "inputParameters": {
+                    "terminationStatus": "FAILED",
+                    "terminationReason": "Total party kill on the road to the dungeon",
+                    "workflowOutput": {
+                      "outcome": "defeat",
+                      "stage": "travel_ambush",
+                      "partyName": "${workflow.input.partyName}",
+                      "narration": "The quest ends on a muddy stretch of road. No one reaches the dungeon.",
+                      "ambush": "${ambush_ref.output.result}"
+                    }
+                  }
+                }
+              ]
+            },
+            "defaultCase": []
+          }
+        ],
+        "merchant": [
+          {
+            "name": "visit_road_merchant",
+            "taskReferenceName": "merchant_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "briefing": "${briefing_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var roll = Math.floor(Math.random() * 20) + 1; var bought = roll >= 12; return { encounter: 'merchant', persuasionRoll: roll, purchasedHealingPotions: bought, goldSpent: bought ? 15 : 0, buff: bought ? 'Advantage on first dungeon check' : null, narration: bought ? 'The rogue haggles; the party stocks healing draughts.' : 'Coin stays tight; the party travels lean.' }; })()"
+            }
+          }
+        ]
+      },
+      "defaultCase": []
+    },
+    {
+      "name": "consolidate_travel_aftermath",
+      "taskReferenceName": "travel_aftermath_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "travelOutcome": "${travel_roll_ref.output.result.outcome}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var buff = 0; var note = 'The road leaves its mark.'; if ($.travelOutcome === 'merchant') { var roll = Math.floor(Math.random() * 20) + 1; var bought = roll >= 12; buff = bought ? 2 : 0; note = bought ? 'Healing draughts steady nerves at the entrance.' : 'No supplies gained from the merchant.'; } else if ($.travelOutcome === 'ambush') { note = 'Road wounds linger; the party enters on edge.'; } else { note = 'Well-rested arrivals at the threshold.'; } return { travelOutcome: $.travelOutcome, perceptionBuff: buff, narration: note }; })()"
+      }
+    },
+    {
+      "name": "enter_dungeon",
+      "taskReferenceName": "dungeon_entry_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "dungeonName": "${workflow.input.dungeonName}",
+        "partySheet": "${party_sheet_ref.output.result}",
+        "travelAftermath": "${travel_aftermath_ref.output.result}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var perception = Math.floor(Math.random() * 20) + 1; var buff = $.travelAftermath.perceptionBuff || 0; var total = perception + buff; var dc = $.partySheet.questDc; var spotted = total >= dc; return { scene: 'dungeon_entrance', perceptionRoll: perception, buff: buff, total: total, dc: dc, spottedTrap: spotted, narration: spotted ? 'Sera spots a glyph-trapped threshold before anyone steps wrong.' : 'A rumble echoes below; something knows they have arrived.' }; })()"
+      }
+    },
+    {
+      "name": "parallel_dungeon_probe",
+      "taskReferenceName": "parallel_probe_ref",
+      "type": "FORK_JOIN",
+      "forkTasks": [
+        [
+          {
+            "name": "rogue_scout_traps",
+            "taskReferenceName": "scout_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var best = 0; var hero = 'party'; var roster = $.partySheet.roster; for (var i = 0; i < roster.length; i++) { if (roster[i].modifiers.stealth > best) { best = roster[i].modifiers.stealth; hero = roster[i].name; } } var roll = Math.floor(Math.random() * 20) + 1 + best; var dc = $.partySheet.questDc; return { skill: 'stealth', hero: hero, roll: roll, dc: dc, success: roll >= dc, intel: roll >= dc ? 'Hidden latch and cult patrol timetable discovered' : 'A sentry almost spots the scout' }; })()"
+            }
+          }
+        ],
+        [
+          {
+            "name": "wizard_read_sigils",
+            "taskReferenceName": "arcana_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var best = 0; var hero = 'party'; var roster = $.partySheet.roster; for (var i = 0; i < roster.length; i++) { if (roster[i].modifiers.arcana > best) { best = roster[i].modifiers.arcana; hero = roster[i].name; } } var roll = Math.floor(Math.random() * 20) + 1 + best; var dc = $.partySheet.questDc; return { skill: 'arcana', hero: hero, roll: roll, dc: dc, success: roll >= dc, intel: roll >= dc ? 'Boss weak to radiant; ritual completes at moonrise' : 'The sigils blur into painful static' }; })()"
+            }
+          }
+        ],
+        [
+          {
+            "name": "cleric_sense_corruption",
+            "taskReferenceName": "religion_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var best = 0; var hero = 'party'; var roster = $.partySheet.roster; for (var i = 0; i < roster.length; i++) { if (roster[i].modifiers.religion > best) { best = roster[i].modifiers.religion; hero = roster[i].name; } } var roll = Math.floor(Math.random() * 20) + 1 + best; var dc = $.partySheet.questDc; return { skill: 'religion', hero: hero, roll: roll, dc: dc, success: roll >= dc, intel: roll >= dc ? 'Undead flank the ritual chamber; holy water advised' : 'Divine whispers are drowned by static' }; })()"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "dungeon_probe_join",
+      "taskReferenceName": "probe_join_ref",
+      "type": "JOIN",
+      "joinOn": [
+        "scout_ref",
+        "arcana_ref",
+        "religion_ref"
+      ]
+    },
+    {
+      "name": "compile_scouting_report",
+      "taskReferenceName": "intel_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "scout": "${scout_ref.output.result}",
+        "arcana": "${arcana_ref.output.result}",
+        "religion": "${religion_ref.output.result}",
+        "partyName": "${workflow.input.partyName}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var checks = [$.scout, $.arcana, $.religion]; var wins = checks.filter(function (c) { return c.success; }).length; var advantage = wins >= 2 ? 'advantage' : wins === 1 ? 'normal' : 'disadvantage'; var lines = checks.map(function (c) { return c.hero + ' (' + c.skill + '): ' + (c.success ? 'SUCCESS' : 'FAIL') + ' — ' + c.intel; }); return { successes: wins, tacticalAdvantage: advantage, report: lines, briefingForDm: $.partyName + ' has ' + advantage + ' going into the crossroads (' + wins + '/3 probes succeeded).' }; })()"
+      }
+    },
+    {
+      "name": "dm_crossroads",
+      "taskReferenceName": "dm_crossroads_ref",
+      "type": "HUMAN",
+      "inputParameters": {
+        "intelReport": "${intel_ref.output.result}",
+        "dungeonName": "${workflow.input.dungeonName}",
+        "instructions": "Choose the party approach: stealth, assault, or parley. Complete with {\"approach\":\"stealth|assault|parley\",\"dmNotes\":\"optional flavor\"}"
+      }
+    },
+    {
+      "name": "resolve_crossroads",
+      "taskReferenceName": "crossroads_gate_ref",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "approach",
+      "inputParameters": {
+        "approach": "${dm_crossroads_ref.output.approach}"
+      },
+      "decisionCases": {
+        "stealth": [
+          {
+            "name": "execute_stealth_approach",
+            "taskReferenceName": "stealth_approach_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "intel": "${intel_ref.output.result}",
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var bonus = $.intel.tacticalAdvantage === 'advantage' ? 4 : $.intel.tacticalAdvantage === 'disadvantage' ? -4 : 0; var roll = Math.floor(Math.random() * 20) + 1 + bonus + 3; var dc = $.partySheet.questDc + 2; return { approach: 'stealth', roll: roll, dc: dc, success: roll >= dc, narration: roll >= dc ? 'Shadows swallow the party; they reach the ritual antechamber unseen.' : 'A bell chimes; stealth fails and guards mobilize.' }; })()"
+            }
+          }
+        ],
+        "assault": [
+          {
+            "name": "execute_assault_approach",
+            "taskReferenceName": "assault_approach_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "intel": "${intel_ref.output.result}",
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var bonus = Math.floor($.partySheet.partyPower / 3); var roll = Math.floor(Math.random() * 20) + 1 + bonus; var dc = $.partySheet.questDc; return { approach: 'assault', roll: roll, dc: dc, success: roll >= dc, narration: roll >= dc ? 'Kaelen kicks the doors in; momentum carries the charge.' : 'The cult braces; the assault stalls in the foyer.' }; })()"
+            }
+          }
+        ],
+        "parley": [
+          {
+            "name": "execute_parley_approach",
+            "taskReferenceName": "parley_approach_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "intel": "${intel_ref.output.result}",
+              "partySheet": "${party_sheet_ref.output.result}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var roll = Math.floor(Math.random() * 20) + 1; var dc = $.partySheet.questDc + 4; var success = roll >= dc; return { approach: 'parley', roll: roll, dc: dc, success: success, narration: success ? 'Words buy time; the cult leader reveals the boss chamber.' : 'Negotiation collapses into drawn steel.' }; })()"
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "default_assault_fallback",
+          "taskReferenceName": "default_approach_ref",
+          "type": "INLINE",
+          "inputParameters": {
+            "partySheet": "${party_sheet_ref.output.result}",
+            "evaluatorType": "graaljs",
+            "expression": "(function () { return { approach: 'assault', roll: 10, dc: $.partySheet.questDc, success: false, narration: 'Indecision costs time; the party charges anyway.' }; })()"
+          }
+        }
+      ]
+    },
+    {
+      "name": "boss_encounter",
+      "taskReferenceName": "boss_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "dungeonName": "${workflow.input.dungeonName}",
+        "questObjective": "${workflow.input.questObjective}",
+        "partySheet": "${party_sheet_ref.output.result}",
+        "intel": "${intel_ref.output.result}",
+        "dmNotes": "${dm_crossroads_ref.output.dmNotes}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { var diff = $.partySheet.difficulty; var bossHpMap = { easy: 30, medium: 50, hard: 75, deadly: 100 }; var bossHp = bossHpMap[diff] || 50; var bossName = 'Arch-Cultist of the Shattered Sigil'; var rounds = []; var partyPower = $.partySheet.partyPower; var tactical = $.intel.tacticalAdvantage === 'advantage' ? 2 : $.intel.tacticalAdvantage === 'disadvantage' ? -2 : 0; var partyHp = $.partySheet.partyHp; for (var r = 1; r <= 5 && bossHp > 0 && partyHp > 0; r++) { var atk = Math.floor(Math.random() * 20) + 1 + Math.floor(partyPower / 5) + tactical; var hit = atk >= $.partySheet.questDc; var dmg = hit ? Math.floor(Math.random() * 10) + 6 : 0; if (atk >= 20) dmg *= 2; bossHp = Math.max(0, bossHp - dmg); var bossHit = Math.floor(Math.random() * 20) + 1 >= 12; var bossDmg = bossHit ? Math.floor(Math.random() * 8) + 4 : 0; partyHp = Math.max(0, partyHp - bossDmg); rounds.push({ round: r, attackRoll: atk, hit: hit, damageToBoss: dmg, bossHp: bossHp, bossHit: bossHit, damageToParty: bossDmg, partyHp: partyHp }); } var victory = bossHp <= 0 && partyHp > 0; var codexRecovered = victory && Math.floor(Math.random() * 20) + 1 >= 8; return { bossName: bossName, location: $.dungeonName, rounds: rounds, victory: victory, codexRecovered: codexRecovered, objectiveComplete: codexRecovered, partyHpRemaining: partyHp, narration: victory ? (codexRecovered ? 'The codex is wrenched from the altar as the sigils crumble.' : 'The cult falls, but the codex shatters in the collapse.') : 'The party is driven back into the dark.' }; })()"
+      }
+    },
+    {
+      "name": "determine_quest_result",
+      "taskReferenceName": "quest_result_ref",
+      "type": "INLINE",
+      "inputParameters": {
+        "victory": "${boss_ref.output.result.victory}",
+        "evaluatorType": "graaljs",
+        "expression": "(function () { return { questResult: $.victory ? 'victory' : 'defeat' }; })()"
+      }
+    },
+    {
+      "name": "quest_outcome_gate",
+      "taskReferenceName": "outcome_gate_ref",
+      "type": "SWITCH",
+      "evaluatorType": "value-param",
+      "expression": "questResult",
+      "inputParameters": {
+        "questResult": "${quest_result_ref.output.result.questResult}"
+      },
+      "decisionCases": {
+        "victory": [
+          {
+            "name": "distribute_loot_and_epilogue",
+            "taskReferenceName": "loot_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "briefing": "${briefing_ref.output.result}",
+              "boss": "${boss_ref.output.result}",
+              "partyName": "${workflow.input.partyName}",
+              "questGiver": "${workflow.input.questGiver}",
+              "evaluatorType": "graaljs",
+              "expression": "(function () { var gold = $.briefing.rewardGold + ($.boss.codexRecovered ? 150 : 25); var items = ['Potion of Greater Healing']; if ($.boss.codexRecovered) items.push('Sigil Shard (arcane focus)'); if ($.boss.partyHpRemaining > 30) items.push('Cloak of the Quiet Step'); var title = $.boss.codexRecovered ? 'Heroes of the Forked Paths' : 'Dungeon Delvers'; return { outcome: $.boss.codexRecovered ? 'legendary_success' : 'partial_success', gold: gold, magicItems: items, renownTitle: title, epilogue: $.questGiver + ' greets ' + $.partyName + ' at dawn. \"You live. The vault lives differently now.\"', objectiveRecovered: $.boss.codexRecovered }; })()"
+            }
+          },
+          {
+            "name": "end_quest_victory",
+            "taskReferenceName": "victory_end_ref",
+            "type": "TERMINATE",
+            "inputParameters": {
+              "terminationStatus": "COMPLETED",
+              "terminationReason": "Quest resolved after boss encounter",
+              "workflowOutput": {
+                "outcome": "${loot_ref.output.result.outcome}",
+                "partyName": "${workflow.input.partyName}",
+                "dungeonName": "${workflow.input.dungeonName}",
+                "bossFight": "${boss_ref.output.result}",
+                "loot": "${loot_ref.output.result}"
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "retreat_epilogue",
+          "taskReferenceName": "defeat_ref",
+          "type": "INLINE",
+          "inputParameters": {
+            "partyName": "${workflow.input.partyName}",
+            "dungeonName": "${workflow.input.dungeonName}",
+            "boss": "${boss_ref.output.result}",
+            "evaluatorType": "graaljs",
+            "expression": "(function () { return { outcome: 'defeat', epilogue: $.partyName + ' retreats from ' + $.dungeonName + ', bloodied but breathing. The ritual continues.', survivors: $.boss.partyHpRemaining > 0 }; })()"
+          }
+        },
+        {
+          "name": "end_quest_defeat",
+          "taskReferenceName": "defeat_end_ref",
+          "type": "TERMINATE",
+          "inputParameters": {
+            "terminationStatus": "FAILED",
+            "terminationReason": "Party defeated at boss encounter",
+            "workflowOutput": {
+              "outcome": "defeat",
+              "partyName": "${workflow.input.partyName}",
+              "dungeonName": "${workflow.input.dungeonName}",
+              "bossFight": "${boss_ref.output.result}",
+              "epilogue": "${defeat_ref.output.result}"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "outputParameters": {
+    "partyName": "${workflow.input.partyName}",
+    "dungeonName": "${workflow.input.dungeonName}",
+    "travelEncounter": "${travel_roll_ref.output.result}",
+    "intelReport": "${intel_ref.output.result}",
+    "bossSummary": "${boss_ref.output.result.narration}"
+  }
+}
