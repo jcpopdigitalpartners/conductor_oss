@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orchestrating a D&amp;D Quest with Conductor OSS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #12110f;
+      --bg-elevated: #1c1916;
+      --bg-code: #0d0c0a;
+      --text: #e8e2d9;
+      --text-muted: #a89f92;
+      --accent: #d4a853;
+      --accent-soft: rgba(212, 168, 83, 0.15);
+      --teal: #6ec4b8;
+      --border: #2e2a24;
+      --quote-border: #d4a853;
+      --warn: #e8a87c;
+      --max: 42rem;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      font-size: 18px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(212, 168, 83, 0.08), transparent),
+        radial-gradient(circle at 100% 100%, rgba(110, 196, 184, 0.04), transparent);
+      color: var(--text);
+      font-family: "Source Sans 3", system-ui, sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .meta span::before {
+      content: "·";
+      margin-right: 1.25rem;
+      opacity: 0.4;
+    }
+
+    .meta span:first-child::before { display: none; }
+
+    .author {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    h1 {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin: 0 0 0.75rem;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .deck {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      font-style: italic;
+      margin: 0;
+      max-width: 36rem;
+    }
+
+    h2 {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 1.45rem;
+      font-weight: 700;
+      margin: 2.75rem 0 1rem;
+      color: var(--accent);
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--teal);
+    }
+
+    p { margin: 0 0 1rem; }
+
+    a {
+      color: var(--teal);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: rgba(110, 196, 184, 0.4);
+    }
+
+    a:hover { text-decoration-color: var(--teal); }
+
+    .lede p:last-child {
+      font-size: 1.05rem;
+      color: var(--text);
+    }
+
+    .callout {
+      background: var(--bg-elevated);
+      border-left: 3px solid var(--quote-border);
+      padding: 1rem 1.25rem;
+      margin: 1.75rem 0;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .callout.tldr {
+      background: var(--accent-soft);
+      border-left-color: var(--accent);
+    }
+
+    .callout.tldr h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+    }
+
+    .callout.warn {
+      border-left-color: var(--warn);
+      background: rgba(232, 168, 124, 0.08);
+    }
+
+    .callout.highlight {
+      border-left-color: var(--teal);
+      font-size: 1.05rem;
+    }
+
+    .callout ul { margin: 0; padding-left: 1.2rem; }
+    .callout li { margin-bottom: 0.35rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.25rem 0;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.85em;
+      background: var(--bg-code);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      color: var(--teal);
+    }
+
+    pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.15rem;
+      overflow-x: auto;
+      margin: 1rem 0 1.25rem;
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text);
+    }
+
+    .steps { counter-reset: step; list-style: none; padding: 0; margin: 1.5rem 0; }
+
+    .steps li {
+      counter-increment: step;
+      margin-bottom: 1.75rem;
+      padding-left: 2.5rem;
+      position: relative;
+    }
+
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0.1rem;
+      width: 1.75rem;
+      height: 1.75rem;
+      background: var(--accent-soft);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 50%;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .steps h3 { margin-top: 0; }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2.5rem 0;
+    }
+
+    .learn ol {
+      padding-left: 1.25rem;
+      margin: 0;
+    }
+
+    .learn li { margin-bottom: 0.85rem; padding-left: 0.25rem; }
+
+    .learn strong { color: var(--accent); }
+
+    .closing {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .closing .kicker {
+      font-family: "Fraunces", Georgia, serif;
+      font-size: 1.2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .repo-link {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .diagram {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin: 1.25rem 0;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.72rem;
+      line-height: 1.45;
+      color: var(--text-muted);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    @media (max-width: 600px) {
+      html { font-size: 16px; }
+      .wrap { padding: 2rem 1rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+  <article class="wrap">
+    <header>
+      <div class="meta">
+        <span class="author">JC Choi</span>
+        <span>Jun 10, 2026</span>
+        <span>8 min read</span>
+        <span>conductor · workflows · dnd</span>
+      </div>
+      <h1>Orchestrating a D&amp;D Quest with Conductor OSS</h1>
+      <p class="deck">Workflow orchestration, fork/join scouting, and a human-in-the-loop dungeon master</p>
+    </header>
+
+    <section class="lede">
+      <p>Most workflow-engine tutorials start with order fulfillment: charge the card, ship the box, send the email. That’s fine, but it doesn’t show why orchestration is <em>fun</em> to think about.</p>
+      <p>I wanted a demo where branching, parallelism, randomness, and “wait for a human” feel natural — so I built a <strong>Dungeons &amp; Dragons quest pipeline</strong> in <a href="https://github.com/conductor-oss/conductor">Conductor OSS</a>.</p>
+      <p>The code is JSON. No custom workers. No microservices. Just a workflow definition, a local server, and a CLI. Somewhere between the tavern briefing and the boss fight, Conductor stopped and asked me to make a decision like a dungeon master.</p>
+      <p>That’s when it clicked.</p>
+    </section>
+
+    <aside class="callout tldr">
+      <h2>TL;DR</h2>
+      <ul>
+        <li>Three workflow demos in <a href="https://github.com/jcpopdigitalpartners/conductor_oss">conductor_oss</a>: hello-world, hiring pipeline, D&amp;D quest.</li>
+        <li>The quest uses <code>SWITCH</code>, <code>FORK_JOIN</code>, <code>HUMAN</code>, and <code>TERMINATE</code> — no custom backend.</li>
+        <li>Run locally with <code>conductor server start</code> + Java 21.</li>
+        <li>The hard parts were operational: WSL + SQLite on <code>/mnt/c/</code>, stale IDs, UI search — not the JSON.</li>
+      </ul>
+    </aside>
+
+    <h2>Why Conductor?</h2>
+    <p><a href="https://conductor-oss.github.io/conductor/">Conductor</a> is a workflow orchestration engine originally from Netflix. You define processes as JSON. A server executes them <strong>durably</strong> — if a step fails or the process pauses for days, state is preserved.</p>
+
+    <table>
+      <thead><tr><th>Need</th><th>Example in the quest</th></tr></thead>
+      <tbody>
+        <tr><td>Conditional paths</td><td>Auto-reject on failed screening</td></tr>
+        <tr><td>Parallel work</td><td>Rogue, wizard, cleric scout at once</td></tr>
+        <tr><td>Human approval</td><td>DM picks stealth, assault, or parley</td></tr>
+        <tr><td>Execution history</td><td>See exactly what ran and what’s waiting</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Why a D&amp;D quest?</h2>
+    <table>
+      <thead><tr><th>D&amp;D beat</th><th>Conductor feature</th></tr></thead>
+      <tbody>
+        <tr><td>Random travel encounter</td><td><code>INLINE</code> + d20 roll</td></tr>
+        <tr><td>Ambush vs. safe road</td><td><code>SWITCH</code></td></tr>
+        <tr><td>Parallel scouting</td><td><code>FORK_JOIN</code> + <code>JOIN</code></td></tr>
+        <tr><td>DM crossroads</td><td><code>HUMAN</code></td></tr>
+        <tr><td>Boss fight</td><td><code>SWITCH</code> + <code>TERMINATE</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>The pipeline</h2>
+    <div class="diagram">Validate → Party sheet → Tavern → d20 travel
+  ├─ ambush (+ possible TPK)
+  ├─ merchant
+  └─ quiet road
+       → Enter dungeon
+       → FORK (stealth / arcana / religion) → JOIN
+       → Intel report
+       → HUMAN: DM crossroads
+       → stealth | assault | parley
+       → Boss fight → loot or retreat</div>
+
+    <pre><code>{
+  "partyName": "The Conductor's Company",
+  "dungeonName": "Vault of Shattered Sigils",
+  "difficulty": "hard",
+  "party": [
+    { "name": "Kaelen", "class": "fighter", "level": 6 },
+    { "name": "Sera", "class": "rogue", "level": 6 }
+  ]
+}</code></pre>
+
+    <blockquote class="callout highlight">
+      <strong>The pause is the point.</strong> The workflow stops at <code>dm_crossroads_ref</code> until a human completes the <code>HUMAN</code> task — it waits, durably, until you send the next signal.
+    </blockquote>
+
+    <h2>Running it (WSL)</h2>
+    <ol class="steps">
+      <li>
+        <h3>Start the server</h3>
+        <pre><code>cd ~
+conductor server start</code></pre>
+        <aside class="callout warn">Start from <code>~</code>, not <code>/mnt/c/...</code>. SQLite shared memory fails on Windows mounts.</aside>
+      </li>
+      <li>
+        <h3>Register the workflow</h3>
+        <pre><code>conductor workflow create dnd_quest_pipeline.json</code></pre>
+      </li>
+      <li>
+        <h3>Start a quest</h3>
+        <pre><code>conductor workflow start -w dnd_quest_pipeline -f sample_quest_input.json</code></pre>
+      </li>
+      <li>
+        <h3>Play the DM</h3>
+        <pre><code>conductor task update-execution \
+  --workflow-id &lt;workflow-id&gt; \
+  --task-ref-name dm_crossroads_ref \
+  --status COMPLETED \
+  --output '{"approach":"stealth","dmNotes":"Shadows favored."}'</code></pre>
+      </li>
+    </ol>
+
+    <h2>What broke</h2>
+    <h3>SQLite on <code>/mnt/c/</code></h3>
+    <pre><code>SQLITE_IOERR_SHMOPEN — disk I/O error (shared memory)</code></pre>
+    <p>Fix: start the server from <code>~</code>.</p>
+
+    <h3>Workflow not found</h3>
+    <p>Register before you run: <code>workflow create</code> then <code>workflow start</code>.</p>
+
+    <h3>Executions hidden in UI</h3>
+    <p><strong>Executions</strong> tab → search by name → click Search. Not Definitions.</p>
+
+    <h2>What I learned</h2>
+    <ol class="learn">
+      <li><strong>Orchestration shines when the process is messy</strong> — randomness, parallelism, early exits, human choice.</li>
+      <li><strong>HUMAN tasks are the “aha”</strong> — that’s not a queue; that’s orchestration.</li>
+      <li><strong>INLINE tasks are enough for demos</strong> — production swaps them for workers; the graph stays the same.</li>
+      <li><strong>Operations &gt; definitions</strong> — WSL and SQLite cost more time than the JSON.</li>
+      <li><strong>GitHub Pages ≠ deployment</strong> — great for JSON; still need a Java server to run.</li>
+    </ol>
+
+    <footer class="closing">
+      <p class="kicker">Define the story as data. Run the boring parts. Pause where humans belong.</p>
+      <p>That’s worth a d20 roll.</p>
+      <p class="repo-link">By JC Choi · <a href="https://github.com/jcpopdigitalpartners/conductor_oss">github.com/jcpopdigitalpartners/conductor_oss</a></p>
+    </footer>
+  </article>
+</body>
+</html>
