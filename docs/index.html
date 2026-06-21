@@ -255,6 +255,13 @@
 
     .learn strong { color: var(--accent); }
 
+    .next-level table { margin-top: 0.5rem; }
+
+    .next-level h3 {
+      margin-top: 1.5rem;
+      font-size: 0.95rem;
+    }
+
     .closing {
       text-align: center;
       margin-top: 3rem;
@@ -419,6 +426,36 @@ conductor server start</code></pre>
       <li><strong>Operations &gt; definitions</strong> — WSL and SQLite cost more time than the JSON.</li>
       <li><strong>GitHub Pages ≠ deployment</strong> — great for JSON; still need a Java server to run.</li>
     </ol>
+
+    <section class="next-level">
+      <h2>Taking it to the next level</h2>
+      <p>The demo is intentionally self-contained: GraalJS <code>INLINE</code> tasks simulate dice rolls, workers, and narration. The workflow graph is the real artifact. Here’s how you’d evolve it without changing the story.</p>
+
+      <table>
+        <thead><tr><th>Upgrade</th><th>What it adds</th><th>Quest example</th></tr></thead>
+        <tbody>
+          <tr><td><strong>SIMPLE workers</strong></td><td>Real services you own</td><td><code>roll_dice</code>, <code>boss_combat</code> in Python</td></tr>
+          <tr><td><strong>HTTP tasks</strong></td><td>External APIs</td><td>Slack ping at the DM crossroads</td></tr>
+          <tr><td><strong>Event handlers</strong></td><td>React to task state</td><td>Notify when <code>HUMAN</code> → <code>IN_PROGRESS</code></td></tr>
+          <tr><td><strong>SUB_WORKFLOW</strong></td><td>Reusable sub-stories</td><td>Random encounter table</td></tr>
+          <tr><td><strong>WAIT tasks</strong></td><td>Pause on external events</td><td>Resume from a Discord button</td></tr>
+          <tr><td><strong>failureWorkflow</strong></td><td>Cleanup on crash</td><td>Audit trail + party notification</td></tr>
+          <tr><td><strong>Versioning</strong></td><td>Ship v2 safely</td><td>Add a “bribe the guard” branch</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Notify the DM when the crossroads arrives</h3>
+      <p>Instead of polling the UI, fire an event handler when a <code>HUMAN</code> task starts — ping Slack, email, or start a notification sub-workflow. The quest stays paused until the DM completes the task.</p>
+
+      <h3>Swap INLINE for a real worker</h3>
+      <pre><code>@worker_task(task_definition_name="boss_encounter")
+def resolve_boss(combat_state: dict) -> dict:
+    return run_combat_rounds(combat_state)</code></pre>
+      <p>Same workflow graph. Task type changes from <code>INLINE</code> to <code>SIMPLE</code>.</p>
+
+      <h3>Deploy beyond localhost</h3>
+      <p>Docker on a VPS, Railway, or Fly.io — or managed Orkes Conductor. Keep workflow JSON in git; CI registers definitions on merge. GitHub Pages hosts the story; the engine still needs a JVM somewhere.</p>
+    </section>
 
     <footer class="closing">
       <p class="kicker">Define the story as data. Run the boring parts. Pause where humans belong.</p>
