@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vault of Shattered Sigils — Conductor Quest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="backdrop"></div>
+  <header>
+    <h1>Vault of Shattered Sigils</h1>
+    <p class="tagline">Orchestrated by Conductor · driven by CLI</p>
+    <div id="status-bar" class="status-bar hidden">
+      <span id="party-label"></span>
+      <span id="workflow-label"></span>
+      <span id="phase-label" class="phase"></span>
+    </div>
+  </header>
+
+  <main>
+    <aside class="party-panel" id="party-panel">
+      <h2>Party</h2>
+      <ul id="party-list"></ul>
+      <div id="party-stats" class="muted"></div>
+    </aside>
+
+    <section class="story-panel">
+      <div id="error" class="error hidden"></div>
+      <div id="log" class="log"></div>
+
+      <div id="dm-panel" class="dm-panel hidden">
+        <h2>The Crossroads</h2>
+        <p id="intel-brief" class="intel"></p>
+        <ul id="intel-report" class="intel-list"></ul>
+        <p class="prompt">Choose the party's approach:</p>
+        <div class="choices">
+          <button type="button" data-approach="stealth">🌑 Stealth</button>
+          <button type="button" data-approach="assault">⚔️ Assault</button>
+          <button type="button" data-approach="parley">🕊️ Parley</button>
+        </div>
+        <label class="notes-label">
+          DM notes (optional)
+          <textarea id="dm-notes" rows="2" placeholder="Shadows favored the rogue tonight…"></textarea>
+        </label>
+      </div>
+
+      <div id="ending" class="ending hidden">
+        <h2 id="ending-title"></h2>
+        <p id="ending-text"></p>
+        <pre id="ending-loot" class="loot hidden"></pre>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="btn-start" class="primary">Begin quest</button>
+        <button type="button" id="btn-refresh" class="secondary hidden">Refresh</button>
+        <button type="button" id="btn-new" class="secondary hidden">New quest</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="conductor-status">Checking Conductor CLI…</span>
+  </footer>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

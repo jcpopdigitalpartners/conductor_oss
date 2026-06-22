@@ -5,3 +5,12 @@
 
 # Scratch / temp
 scratch.*
+
+# Game frontend
+game-frontend/node_modules/
+
+# Secrets
+kv.env
+.env
+.env.*
+!.env.example
