@@ -1,0 +1,57 @@
+{
+  "name": "document_understanding",
+  "description": "Parse a PDF document, infer intent and tone, and normalize outputs into stable contracts.",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "inputParameters": [
+    "job_id",
+    "filename",
+    "source",
+    "page_count",
+    "extracted_text",
+    "scanned_page_ratio",
+    "hint_document_type"
+  ],
+  "tasks": [
+    {
+      "name": "parse_document",
+      "taskReferenceName": "parse_document_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/document/parse",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "job_id": "${workflow.input.job_id}",
+            "filename": "${workflow.input.filename}",
+            "source": "${workflow.input.source}",
+            "page_count": "${workflow.input.page_count}",
+            "extracted_text": "${workflow.input.extracted_text}",
+            "scanned_page_ratio": "${workflow.input.scanned_page_ratio}",
+            "hint_document_type": "${workflow.input.hint_document_type}"
+          }
+        }
+      }
+    },
+    {
+      "name": "infer_document_understanding",
+      "taskReferenceName": "infer_document_understanding_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/document/infer",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "document": "${parse_document_ref.output.response.body}"
+          }
+        }
+      }
+    }
+  ],
+  "outputParameters": {
+    "document_understanding": "${infer_document_understanding_ref.output.response.body}"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "name": "pdf_to_video_pipeline",
+  "description": "Parent workflow for PDF ingestion, document understanding, human review, and video rendering.",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "inputParameters": [
+    "existing_review_id",
+    "filename",
+    "requested_look_and_feel",
+    "reviewer_id",
+    "page_count",
+    "extracted_text",
+    "scanned_page_ratio",
+    "hint_document_type"
+  ],
+  "tasks": [
+    {
+      "name": "register_upload",
+      "taskReferenceName": "register_upload_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/ingest",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "filename": "${workflow.input.filename}",
+            "source_bucket": "raw",
+            "desired_output_bucket": "final",
+            "tags": [
+              "pdf-to-video",
+              "reference-implementation"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "document_understanding",
+      "taskReferenceName": "document_understanding_ref",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "document_understanding",
+        "version": 1
+      },
+      "inputParameters": {
+        "job_id": "${register_upload_ref.output.response.body.job_id}",
+        "filename": "${workflow.input.filename}",
+        "source": "${register_upload_ref.output.response.body.source}",
+        "page_count": "${workflow.input.page_count}",
+        "extracted_text": "${workflow.input.extracted_text}",
+        "scanned_page_ratio": "${workflow.input.scanned_page_ratio}",
+        "hint_document_type": "${workflow.input.hint_document_type}"
+      }
+    },
+    {
+      "name": "hitl_style_review",
+      "taskReferenceName": "hitl_style_review_ref",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "hitl_style_review",
+        "version": 1
+      },
+      "inputParameters": {
+        "existing_review_id": "${workflow.input.existing_review_id}",
+        "document_understanding": "${document_understanding_ref.output.document_understanding}",
+        "requested_look_and_feel": "${workflow.input.requested_look_and_feel}",
+        "reviewer_id": "${workflow.input.reviewer_id}"
+      }
+    },
+    {
+      "name": "review_outcome",
+      "taskReferenceName": "review_outcome_ref",
+      "type": "SWITCH",
+      "inputParameters": {
+        "decision": "${hitl_style_review_ref.output.review_decision.status}"
+      },
+      "evaluatorType": "value-param",
+      "expression": "decision",
+      "decisionCases": {
+        "approved": [
+          {
+            "name": "video_rendering",
+            "taskReferenceName": "video_rendering_ref",
+            "type": "SUB_WORKFLOW",
+            "subWorkflowParam": {
+              "name": "video_rendering",
+              "version": 1
+            },
+            "inputParameters": {
+              "creative_brief": "${hitl_style_review_ref.output.creative_brief}",
+              "review_decision": "${hitl_style_review_ref.output.review_decision}"
+            }
+          }
+        ],
+        "changes_requested": [
+          {
+            "name": "mark_for_revision",
+            "taskReferenceName": "mark_for_revision_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "decision": "${hitl_style_review_ref.output.review_decision}",
+              "evaluatorType": "graaljs",
+              "expression": "(function() { return { status: 'needs_follow_up_review', reason: 'Reviewer requested changes.' }; })()"
+            }
+          }
+        ],
+        "rejected": [
+          {
+            "name": "mark_rejected",
+            "taskReferenceName": "mark_rejected_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "decision": "${hitl_style_review_ref.output.review_decision}",
+              "evaluatorType": "graaljs",
+              "expression": "(function() { return { status: 'rejected', reason: 'Reviewer rejected the creative brief.' }; })()"
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "mark_unknown_review_state",
+          "taskReferenceName": "mark_unknown_review_state_ref",
+          "type": "INLINE",
+          "inputParameters": {
+            "evaluatorType": "graaljs",
+            "expression": "(function() { return { status: 'unknown_review_state' }; })()"
+          }
+        }
+      ]
+    }
+  ],
+  "outputParameters": {
+    "job": "${register_upload_ref.output.response.body}",
+    "document_understanding": "${document_understanding_ref.output.document_understanding}",
+    "creative_brief": "${hitl_style_review_ref.output.creative_brief}",
+    "review_decision": "${hitl_style_review_ref.output.review_decision}",
+    "render_output": "${video_rendering_ref.output}"
+  }
+}

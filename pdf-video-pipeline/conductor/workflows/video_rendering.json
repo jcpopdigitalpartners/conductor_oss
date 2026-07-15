@@ -1,0 +1,174 @@
+{
+  "name": "video_rendering",
+  "description": "Create a render spec, queue a render job, run quality checks, and package final assets.",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "inputParameters": [
+    "creative_brief",
+    "review_decision"
+  ],
+  "tasks": [
+    {
+      "name": "create_render_spec",
+      "taskReferenceName": "create_render_spec_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/render/spec",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "creative_brief": "${workflow.input.creative_brief}",
+            "review_decision": "${workflow.input.review_decision}"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_render_job",
+      "taskReferenceName": "create_render_job_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/render/jobs",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "spec": "${create_render_spec_ref.output.response.body}"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_for_render_completion",
+      "taskReferenceName": "wait_for_render_completion_ref",
+      "type": "DO_WHILE",
+      "inputParameters": {
+        "evaluatorType": "graaljs",
+        "loop": "${wait_for_render_completion_ref.output}"
+      },
+      "evaluatorType": "graaljs",
+      "loopCondition": "(function () { var loop = $.loop || {}; var i = loop['iteration']; if (i === undefined) { return true; } var iteration = loop[i] || {}; var pollTask = iteration['poll_render_status_ref'] || {}; var body = (((pollTask.output || {}).response || {}).body || {}); return body.status === 'queued' || body.status === 'running'; })();",
+      "loopOver": [
+        {
+          "name": "poll_render_status",
+          "taskReferenceName": "poll_render_status_ref",
+          "type": "HTTP",
+          "inputParameters": {
+            "http_request": {
+              "uri": "http://localhost:8000/render/jobs/${create_render_job_ref.output.response.body.render_id}",
+              "method": "GET"
+            }
+          }
+        },
+        {
+          "name": "wait_between_render_polls",
+          "taskReferenceName": "wait_between_render_polls_ref",
+          "type": "WAIT",
+          "inputParameters": {
+            "duration": "10 seconds"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fetch_render_job",
+      "taskReferenceName": "fetch_render_job_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/render/jobs/${create_render_job_ref.output.response.body.render_id}",
+          "method": "GET"
+        }
+      }
+    },
+    {
+      "name": "render_outcome",
+      "taskReferenceName": "render_outcome_ref",
+      "type": "SWITCH",
+      "inputParameters": {
+        "status": "${fetch_render_job_ref.output.response.body.status}"
+      },
+      "evaluatorType": "value-param",
+      "expression": "status",
+      "decisionCases": {
+        "completed": [
+          {
+            "name": "quality_checks",
+            "taskReferenceName": "quality_checks_ref",
+            "type": "INLINE",
+            "inputParameters": {
+              "render": "${fetch_render_job_ref.output.response.body}",
+              "evaluatorType": "graaljs",
+              "expression": "(function() { return { passed: $.render.status === 'completed' && $.render.progress >= 1, notes: 'Render artifact reached a completed state before packaging.' }; })()"
+            }
+          },
+          {
+            "name": "package_assets",
+            "taskReferenceName": "package_assets_ref",
+            "type": "HTTP",
+            "inputParameters": {
+              "http_request": {
+                "uri": "http://localhost:8000/assets/package",
+                "method": "POST",
+                "contentType": "application/json",
+                "body": {
+                  "job_id": "${workflow.input.creative_brief.job_id}",
+                  "render": "${fetch_render_job_ref.output.response.body}",
+                  "review_decision": "${workflow.input.review_decision}"
+                }
+              }
+            }
+          }
+        ],
+        "failed": [
+          {
+            "name": "terminate_render_failed",
+            "taskReferenceName": "terminate_render_failed_ref",
+            "type": "TERMINATE",
+            "inputParameters": {
+              "terminationStatus": "FAILED",
+              "terminationReason": "${fetch_render_job_ref.output.response.body.error_message}",
+              "workflowOutput": {
+                "render_spec": "${create_render_spec_ref.output.response.body}",
+                "render_job": "${fetch_render_job_ref.output.response.body}",
+                "quality_checks": {
+                  "passed": false,
+                  "notes": "${fetch_render_job_ref.output.response.body.error_message}"
+                },
+                "package": null
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": [
+        {
+          "name": "terminate_unknown_render_state",
+          "taskReferenceName": "terminate_unknown_render_state_ref",
+          "type": "TERMINATE",
+          "inputParameters": {
+            "terminationStatus": "FAILED",
+            "terminationReason": "Render job ended in an unknown state.",
+            "workflowOutput": {
+              "render_spec": "${create_render_spec_ref.output.response.body}",
+              "render_job": "${fetch_render_job_ref.output.response.body}",
+              "quality_checks": {
+                "passed": false,
+                "notes": "Render job ended in an unknown state."
+              },
+              "package": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "outputParameters": {
+    "render_spec": "${create_render_spec_ref.output.response.body}",
+    "render_job": "${fetch_render_job_ref.output.response.body}",
+    "quality_checks": "${quality_checks_ref.output.result}",
+    "package": "${package_assets_ref.output.response.body}"
+  }
+}

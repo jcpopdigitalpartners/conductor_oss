@@ -1,0 +1,34 @@
+[project]
+name = "pdf-video-pipeline-backend"
+version = "0.1.0"
+description = "Reference backend for a Conductor OSS PDF-to-video pipeline."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "minio",
+  "pydantic",
+  "pypdf",
+  "python-multipart",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+pdf = [
+  "docling",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["data*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

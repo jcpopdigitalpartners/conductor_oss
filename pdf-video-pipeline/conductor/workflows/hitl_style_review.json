@@ -1,0 +1,104 @@
+{
+  "name": "hitl_style_review",
+  "description": "Build a creative brief, collect human review feedback, and return a structured approval payload.",
+  "version": 1,
+  "schemaVersion": 2,
+  "ownerEmail": "dev@example.com",
+  "inputParameters": [
+    "document_understanding",
+    "existing_review_id",
+    "requested_look_and_feel",
+    "reviewer_id"
+  ],
+  "tasks": [
+    {
+      "name": "build_creative_brief",
+      "taskReferenceName": "build_creative_brief_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/creative-brief",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "document_understanding": "${workflow.input.document_understanding}",
+            "requested_look_and_feel": "${workflow.input.requested_look_and_feel}"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_review_record",
+      "taskReferenceName": "create_review_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/reviews",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "creative_brief": "${build_creative_brief_ref.output.response.body}",
+            "requested_by": "conductor",
+            "existing_review_id": "${workflow.input.existing_review_id}"
+          }
+        }
+      }
+    },
+    {
+      "name": "notify_review_created",
+      "taskReferenceName": "notify_review_created_ref",
+      "type": "EVENT",
+      "sink": "conductor:review-created",
+      "inputParameters": {
+        "job_id": "${workflow.input.document_understanding.document.job_id}",
+        "review_id": "${create_review_ref.output.response.body.review_id}",
+        "status": "${create_review_ref.output.response.body.status}"
+      }
+    },
+    {
+      "name": "human_style_review",
+      "taskReferenceName": "human_style_review_ref",
+      "type": "HUMAN",
+      "inputParameters": {
+        "job_id": "${workflow.input.document_understanding.document.job_id}",
+        "review_id": "${create_review_ref.output.response.body.review_id}",
+        "reviewer_id": "${workflow.input.reviewer_id}",
+        "brief": "${build_creative_brief_ref.output.response.body}",
+        "review_summary": "${create_review_ref.output.response.body.creative_brief.summary}",
+        "packet_url": "${create_review_ref.output.response.body.packet_url}"
+      }
+    },
+    {
+      "name": "fetch_review_decision",
+      "taskReferenceName": "fetch_review_decision_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/reviews/${create_review_ref.output.response.body.review_id}",
+          "method": "GET"
+        }
+      }
+    },
+    {
+      "name": "revise_creative_brief",
+      "taskReferenceName": "revise_creative_brief_ref",
+      "type": "HTTP",
+      "inputParameters": {
+        "http_request": {
+          "uri": "http://localhost:8000/creative-brief/revise",
+          "method": "POST",
+          "contentType": "application/json",
+          "body": {
+            "creative_brief": "${build_creative_brief_ref.output.response.body}",
+            "review_decision": "${fetch_review_decision_ref.output.response.body.latest_decision}"
+          }
+        }
+      }
+    }
+  ],
+  "outputParameters": {
+    "creative_brief": "${revise_creative_brief_ref.output.response.body}",
+    "review_record": "${fetch_review_decision_ref.output.response.body}",
+    "review_decision": "${fetch_review_decision_ref.output.response.body.latest_decision}"
+  }
+}
